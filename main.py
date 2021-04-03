@@ -1,11 +1,18 @@
 import sys
 import time
 import socketio
-import asyncio
 import aiohttp
-import subprocess
+from subprocess import Popen, PIPE, STDOUT
 import datetime
 from aiohttp import web
+import os
+from dotenv import load_dotenv
+
+# Load env from .env if possible.
+load_dotenv(verbose=True)
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+HELIUM_PATH = os.environ.get("HELIUM_PATH")
 
 API_BASE_URL = "https://discord.com/api/v8"
 CREATE_DM_URL = API_BASE_URL + "/users/@me/channels"
@@ -20,6 +27,10 @@ class NoRunningClient(GatewayError):
     pass
 
 
+class RollbackFailure(GatewayError):
+    pass
+
+
 class UrbanRobot(socketio.AsyncNamespace):
     """Urban Robot is a simple Python script to manage Helium bot processes."""
 
@@ -28,19 +39,27 @@ class UrbanRobot(socketio.AsyncNamespace):
         healthy_percentage = kwargs.pop("healthy_percentage", 100)
         shutdown_if_outdated = kwargs.pop("shutdown_if_outdated", False)
         interval = kwargs.pop("interval", 30)
-        token = kwargs.pop("token", "token")
+        token = kwargs.pop("token", BOT_TOKEN)
+        helium_path = kwargs.pop("helium_path", HELIUM_PATH)
         super().__init__(*args, **kwargs)
         self.vital_cogs = vital_cogs
         self.healthy_percentage = healthy_percentage
         self.shutdown_if_outdated = shutdown_if_outdated
         self.interval = interval
         self.token = token
+        self.helium_path = helium_path
         self.clients = {}
         self.ready_clients = {}
         self.running_client = {}
         self.cache = {}
         self.cache_age = time.perf_counter()
         self.is_sane = True
+        self.last_known_good_hash = (
+            Popen(["git", "rev-parse", "HEAD"], stdout=PIPE)
+            .communicate()[0]
+            .decode("utf-8")
+            .strip("\n")
+        )
 
     async def on_connect(self, sid, eviron):
         """This deals with clients that have just connected."""
@@ -137,6 +156,14 @@ class UrbanRobot(socketio.AsyncNamespace):
                 await self.shutdown(sid, "health_check_failure")
                 return
 
+        self.last_known_good_hash = (
+            Popen(["git", "rev-parse", "HEAD"], stdout=PIPE)
+            .communicate()[0]
+            .decode("utf-8")
+            .strip("\n")
+            if data.get("OK")
+            else self.last_known_good_hash
+        )
         await self.start_bot(sid, data.get("reason"))
 
     async def on_cache_sync(self, sid, data):
@@ -219,26 +246,18 @@ class UrbanRobot(socketio.AsyncNamespace):
         await sio.call("cache_sync", {"t": "cache_sync", "d": {}}, to=sid)
         return self.cache
 
-    @classmethod
-    async def do_rollback(cls):
-        raise NotImplementedError
+    async def do_rollback(self):
         print("Rolling back previous update...")
-        # TODO: do rollback & handle any potential error
-        print("rollback successful.")
-
-    @classmethod
-    async def do_update_check(cls):
-        raise NotImplementedError
-        while True:
-            print("Checking for updates...")
-            # TODO: do git pull here
-            update_found = "shrug"
-            if update_found:
-                print("Found update! Client has updated, starting new client.")
-                cls.spawn_process("example_bot")
-            else:
-                print("No new update.")
-            asyncio.sleep(250)
+        res = (
+            Popen(["git", "reset", "--hard", self.last_known_good_hash], stdout=PIPE)
+            .communicate[0]
+            .decode("utf-8")
+        )
+        res_list = res.split(" ")
+        if res_list[0] != "HEAD":
+            self.is_sane = False
+            raise RollbackFailure(res)
+        print(f"rollback successful.\n{res}")
 
     @classmethod
     async def discord_send(cls, destination: int, message: str, token: str, dm=False):
@@ -266,22 +285,30 @@ class UrbanRobot(socketio.AsyncNamespace):
             log_file + f"-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.log"
         )
         f = open(file_name, "a")
-        subprocess.Popen(
-            [sys.executable, process_path], stdout=f, stderr=subprocess.STDOUT
-        )
+        Popen([sys.executable, process_path], stdout=f, stderr=STDOUT)
 
 
 sio = socketio.AsyncServer()
+sio.register_namespace(UrbanRobot("/"))
+routes = web.RouteTableDef()
 
 
-def main():
-    sio.register_namespace(UrbanRobot("/"))
-    sio.start_background_task(UrbanRobot.do_update_check)
-    app = web.Application()
-    sio.attach(app)
-    UrbanRobot.spawn_process("example")
-    web.run_app(app)
+@routes.post("/payload")
+async def payload(request):
+    data = await request.json()
+    if data.get("ref") == "refs/heads/main":
+        for commit in data["commits"]:
+            if commit["message"].startswith("[DEPLOY]"):
+                Popen(["git", "pull"])
+                UrbanRobot.spawn_process(HELIUM_PATH)
+                break
+    return web.Response(text="OK")
+
+
+app = web.Application()
+sio.attach(app)
+UrbanRobot.spawn_process(HELIUM_PATH)
 
 
 if __name__ == "__main__":
-    main()
+    web.run_app(app)
