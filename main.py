@@ -7,6 +7,7 @@ import datetime
 from aiohttp import web
 import os
 from dotenv import load_dotenv
+import logging
 
 # Load env from .env if possible.
 load_dotenv(verbose=True)
@@ -60,25 +61,26 @@ class UrbanRobot(socketio.AsyncNamespace):
             .decode("utf-8")
             .strip("\n")
         )
+        logging.debug(f"set last_known_good_hash to {self.last_known_good_hash}")
 
     async def on_connect(self, sid, eviron):
         """This deals with clients that have just connected."""
-        print(f"client {sid} has connected")
+        logging.debug(f"client {sid} has connected")
 
     async def on_disconnect(self, sid, environ):
         """This deals with clients that have disconnected."""
-        print(f"client {sid} has disconnected")
+        logging.debug(f"client {sid} has disconnected")
         self.clients.pop(sid, None)
         self.ready_clients.pop(sid, None)
         if self.running_client["sid"] == sid:
             self.running_client = {}
-        print("bot is assumed dead")
+        logging.warning("Bot is assumed dead.")
         if self.is_sane:
-            print("attempting to restart bot")
+            logging.info("Attempting to restart bot...")
             self.spawn_process("example_bot")
         else:
-            print("the bot is not running, and the code is not functional.")
-            print("developer intervention is required.")
+            logging.critical("The bot is not running, and the code is not functional.")
+            logging.critical("Developer intervention is required.")
 
     async def on_try_again(self, sid, data):
         """This handles the try_again event.
@@ -86,58 +88,64 @@ class UrbanRobot(socketio.AsyncNamespace):
         This event is to only be used by a developer, in the case of
         a failed rollback or otherwise event that would case `is_sane` to
         become false."""
+        logging.debug(f"client {sid} has sent the TRY_AGAIN event with data {data}")
         self.is_sane = True
         self.spawn_process("example_bot")
 
     async def on_heartbeat(self, sid, data):
+        logging.debug(f"client {sid} has sent the HEARTBEAT event with data {data}")
         since_last_beat = time.perf_counter()
         self.clients[sid]["_since_last_beat"] = since_last_beat
-        await sio.emit(
-            "heartbeat_ack",
-            {"t": "heartbeat_ack", "d": {"since_last_beat": since_last_beat}},
-        )
-        print(f"client {sid} is alive")
+        data = {"t": "heartbeat_ack", "d": {"since_last_beat": since_last_beat}}
+        logging.debug(f"emitting event HEARTBEAT_ACK to client {sid} with data {data}")
+        await sio.emit("heartbeat_ack", data, to=sid)
 
     async def on_hello(self, sid, data):
         """This handles the first contact between the client and the gateway."""
-        print(f"client {sid} has sent the HELLO event")
+        logging.debug(f"client {sid} has sent the HELLO event with data {data}")
+        logging.info(f"Initiating relationship with client {sid}")
         data = data.get("d")
         self.clients[sid] = {
             "version": data.get("version"),
             "_since_last_beat": time.perf_counter(),
         }
         if self.running_client:
-            await sio.emit(
-                "hello",
-                {
-                    "t": "ack",
-                    "d": {
-                        "interval": self.interval,
-                        "token": self.token,
-                        "process_commands": False,
-                    },
+            data = {
+                "t": "ack",
+                "d": {
+                    "interval": self.interval,
+                    "token": self.token,
+                    "process_commands": False,
                 },
-            )
+            }
         else:
-            await sio.emit(
-                "hello",
-                {"t": "ack", "d": {"token": self.token, "process_commands": True}},
-            )
+            data = {"t": "ack", "d": {"token": self.token, "process_commands": True}}
+
+        logging.debug(f"emitting event HELLO to client {sid} with data {data}")
+        await sio.emit("hello", data, to=sid)
 
     async def on_ready(self, sid, data):
         """This handles the ready event sent from the client."""
-        print(f"client {sid} has sent the READY event")
+        logging.debug(f"client {sid} has sent the READY event with data {data}")
         self.ready_clients[sid] = self.clients[sid]
         data = data.get("d")
 
         if self.running_client and sid == self.running_client[sid]:
-            await sio.emit("command", {"t": "OK", "d": {}})
+            logging.debug("emitting event COMMAND")
+            logging.debug(f"dispatching command ok with no data to client {sid}")
+            logging.info(f"Client {sid} is up and running!")
+            await sio.emit("command", {"t": "ok", "d": {}}, to=sid)
             return
 
         outdated = self.clients[sid]["version"] <= self.running_client["version"]
 
         if not outdated:
-            await sio.emit("command", {"t": "health_check", "d": {}})
+            logging.info(f"Starting up client {sid} with command health_check")
+            logging.debug("emitting event COMMAND")
+            logging.debug(
+                f"dispatching command health_check with no data to client {sid}"
+            )
+            await sio.emit("command", {"t": "health_check", "d": {}}, to=sid)
 
         return
 
@@ -145,14 +153,22 @@ class UrbanRobot(socketio.AsyncNamespace):
         """Handles the response to the health check.
 
         This health check events is expected to be called only prior to startup."""
+        logging.debug(f"client {sid} has sent the HEALTH_CHECK event with data {data}")
         data = data.get("d")
+        results = f"client {sid} health check: "
         if not data.get("OK"):
             cogs = data.get("cogs")
             for cog in cogs:
                 if not cogs[cog] and cog in self.vital_cogs:
+                    results = results + f"vital cog {cog} failed to load."
+                    logging.debug(results)
+                    logging.warning(f"Client {sid} FAILED health check.")
                     await self.shutdown(sid, "vital_cog_failed")
                     return
             if data.get("percent") < self.percent_to_start:
+                results = results + f"{data.get('percent')}% is too low to start."
+                logging.debug(results)
+                logging.warning(f"Client {sid} FAILED health check.")
                 await self.shutdown(sid, "health_check_failure")
                 return
 
@@ -164,9 +180,11 @@ class UrbanRobot(socketio.AsyncNamespace):
             if data.get("OK")
             else self.last_known_good_hash
         )
+        logging.debug(f"set last_known_good_hash to {self.last_known_good_hash}")
         await self.start_bot(sid, data.get("reason"))
 
     async def on_cache_sync(self, sid, data):
+        logging.debug(f"client {sid} has sent the CACHE_SYNC event with data {data}")
         """Sync the data between clients."""
         target = []
         if self.running_client["sid"] != sid:
@@ -177,6 +195,9 @@ class UrbanRobot(socketio.AsyncNamespace):
                     target.append(client["sid"])
 
         for target in target:
+            logging.debug(
+                f"emitting event CACHE_SYNC to client {target} with data {data}"
+            )
             await sio.emit(
                 "cache_sync", {"t": "cache_sync_recv", "d": data.get("d")}, to=target
             )
@@ -185,13 +206,15 @@ class UrbanRobot(socketio.AsyncNamespace):
         """Handles the client being put into a 'coma' state.
 
         The coma state is defined by the client not processing commands sent by users."""
-        print(
-            f"client {sid} has stopped processing commands, but is still connected to discord"
-        )
+        logging.debug(f"client {sid} has sent the COMA event with data {data}")
 
     async def on_shutdown(self, sid, data):
         """Handles the shutdown of a client."""
-        print(f"client {sid} has disconnected from discord")
+        logging.debug(f"client {sid} has sent the SHUTDOWN event with data {data}")
+        if sid == self.running_client["sid"]:
+            logging.warning(f"Running client {sid} has disconnected from Discord.")
+        else:
+            logging.info(f"Client {sid} has disconnected from discord")
         if self.ready_clients.get(sid):
             self.ready_clients.pop(sid, None)
 
@@ -200,54 +223,83 @@ class UrbanRobot(socketio.AsyncNamespace):
         if self.running["sid"] == sid:
             await self.force_cache_sync(self.running_client["sid"])
             self.running = None
-        await sio.emit("command", {"t": "process_commands", "d": {"stop": True}})
+        d = {"stop": True}
+        logging.debug("emitting event COMMAND")
+        logging.debug(
+            f"dispatching command process_commands with data {d} to client {sid}"
+        )
+        await sio.emit("command", {"t": "process_commands", "d": d}, to=sid)
 
     async def shutdown(self, sid, reason):
         """This function tells a given client to shutdown."""
+        logging.debug(f"shutdown function for {sid} has been called")
         if self.running["sid"] == sid:
             await self.force_cache_sync(self.running_client["sid"])
             self.running = None
         if reason == "health_check_fail":
             await self.do_rollback()
-        await sio.emit("command", {"t": "shutdown", "d": {"reason": reason}}, to=sid)
+        d = {"reason": reason}
+        logging.debug("emitting event COMMAND")
+        logging.debug(f"dispatching command shutdown with data {d} to client {sid}")
+        await sio.emit("command", {"t": "shutdown", "d": d}, to=sid)
 
     async def start(self, sid, reason, kill_running=False):
         """This function tells a given client to start."""
+        logging.debug(f"start function for {sid} has been called")
         if self.running_client:
             cache = await self.do_cache_sync(self.running_client["sid"])
+            d = {"reason": reason}
             if kill_running:
+                logging.debug("emitting event COMMAND")
+                logging.debug(
+                    f"dispatching command shutdown with data {d} to client {self.running_client['sid']}"
+                )
                 await sio.emit(
                     "command",
-                    {"t": "shutdown", "d": {"reason": reason}},
+                    {"t": "shutdown", "d": d},
                     to=self.running_client["sid"],
                 )
             else:
+                logging.debug("emitting event COMMAND")
+                logging.debug(
+                    f"dispatching command coma with data {d} to client {self.running_client['sid']}"
+                )
                 await sio.emit(
                     "command",
-                    {"t": "coma", "d": {"reason": reason}},
+                    {"t": "coma", "d": d},
                     to=self.running_client["sid"],
                 )
         self.running_client = self.ready_clients[sid]
+        d = {"stop": False, "cache": cache}
+        logging.debug("emitting event COMMAND")
+        logging.debug(
+            f"dispatching command process_commands with data {d} to client {sid}"
+        )
         await sio.emit(
             "command",
-            {"t": "process_commands", "d": {"stop": False, "cache": cache}},
+            {"t": "process_commands", "d": d},
             to=sid,
         )
 
     async def do_cache_sync(self, sid):
         """Syncs the cache between clients."""
+        logging.debug(f"running cache sync, target {sid}")
 
         async def handle_response(sid, data):
             """Handles the response to the cache sync."""
+            logging.debug(
+                f"client {sid} has sent the CACHE_SYNC event with data {data}"
+            )
             self.cache = data.get("d").get("cache")
             self.cache_age = time.perf_counter()
 
         sio.on("cache_sync", handler=handle_response)
+        logging.debug(f"calling event CACHE_SYNC to client {sid}")
         await sio.call("cache_sync", {"t": "cache_sync", "d": {}}, to=sid)
         return self.cache
 
     async def do_rollback(self):
-        print("Rolling back previous update...")
+        logging.info("Rolling back previous update...")
         res = (
             Popen(["git", "reset", "--hard", self.last_known_good_hash], stdout=PIPE)
             .communicate[0]
@@ -256,6 +308,10 @@ class UrbanRobot(socketio.AsyncNamespace):
         res_list = res.split(" ")
         if res_list[0] != "HEAD":
             self.is_sane = False
+            logging.critical(
+                "Rollback failure! Urban Robot is no longer in a sane state."
+            )
+            logging.critical("Developer intervention is required.")
             raise RollbackFailure(res)
         print(f"rollback successful.\n{res}")
 
@@ -281,6 +337,7 @@ class UrbanRobot(socketio.AsyncNamespace):
     @classmethod
     def spawn_process(cls, process_path, log_file="log/helium"):
         """This spawns a new python process."""
+        logging.debug(f"spawning process {process_path}")
         file_name = (
             log_file + f"-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.log"
         )
@@ -299,6 +356,7 @@ async def payload(request):
     if data.get("ref") == "refs/heads/main":
         for commit in data["commits"]:
             if commit["message"].startswith("[DEPLOY]"):
+                logging.info("Deploying new update with git pull...")
                 Popen(["git", "pull"])
                 UrbanRobot.spawn_process(HELIUM_PATH)
                 break
