@@ -18,7 +18,9 @@ This is the interval that a Helium process should send a heartbeat. By default, 
 ### `token`:
 This is the token used to authorize when connecting to Discord.
 #
-
+### `helium_path`:
+This is the path of the given helium process, so Urban Robot knows where to spawn Helium processes from.
+#
 ## __Attributes__
 ### `self.clients`:
 The dictionary of all the connected clients.
@@ -37,6 +39,9 @@ The exact time the cache was last updated.
 #
 ### `self.is_sane`:
 This is the flag that determines whether or not the code Urban Robot is currently deploying is functional. If this is ever `False`,  Urban Robot will become inactive, as no possible Helium process can be deployed. A manual start will be required.
+#
+### `self.last_known_good_hash`:
+This is the git commit hash that is stored as the last commit that *worked*. Urban Robot will attempt to rollback to this in the event of a git pull failing a health check.
 #
 ## __Events__
 ### `on_connect`:
@@ -72,9 +77,7 @@ This is triggered by a client shutting down and disconnecting from Discord. Not 
 ## __Functions__
 ### `self.do_rollback()`:
 This function reverts a git pull, usually after a failed health check.
-#
-### `self.do_update_check()`:
-This function checks for updates, usually by running git pull.
+
 #
 ### `self.do_cache_sync(sid)`:
 This function retrieves the cache from a given client and stores it.
