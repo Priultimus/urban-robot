@@ -8,19 +8,19 @@ import os
 from dotenv import load_dotenv
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
-
 # Load env from .env if possible.
 PRODUCTION = True
 if os.environ.get("MODE") != "production":
     load_dotenv(verbose=True)
-    PRODUCTION = True
+    PRODUCTION = False
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 LOGGING_CHANNEL = os.environ.get("LOGGING_CHANNEL")
+LOG_LEVEL = int(os.environ.get("LOG_LEVEL"))
 DISCORD_LOG_LEVEL = int(os.environ.get("DISCORD_LOG_LEVEL"))
 HELIUM_PATH = os.environ.get("HELIUM_PATH")
-print(HELIUM_PATH)
+
+logging.basicConfig(level=LOG_LEVEL)
 
 API_BASE_URL = "https://discord.com/api/v8"
 CREATE_DM_URL = API_BASE_URL + "/users/@me/channels"
@@ -402,7 +402,7 @@ async def payload(request):
 app = web.Application()
 app.add_routes(routes)
 sio.attach(app)
-# UrbanRobot.spawn_process(HELIUM_PATH)
+UrbanRobot.spawn_process(HELIUM_PATH)
 
 
 if __name__ == "__main__":
