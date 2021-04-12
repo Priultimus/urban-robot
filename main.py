@@ -374,7 +374,7 @@ class UrbanRobot(socketio.AsyncNamespace):
             log_file + f"-{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.log"
         )
         f = open(file_name, "a")
-        process = process_path + main_file
+        process = process_path + " " + main_file
         Popen([sys.executable, process], stdout=f, stderr=STDOUT, cwd=process_path)
 
 
