@@ -9,11 +9,9 @@ from dotenv import load_dotenv
 import logging
 
 # Load env from .env if possible.
-PRODUCTION = True
-if os.environ.get("MODE") != "production":
-    load_dotenv(verbose=True)
-    PRODUCTION = False
+load_dotenv(verbose=True)
 
+PRODUCTION = os.environ.get("PRODUCTION")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 LOGGING_CHANNEL = os.environ.get("LOGGING_CHANNEL")
 LOG_LEVEL = int(os.environ.get("LOG_LEVEL"))
