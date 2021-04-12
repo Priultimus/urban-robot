@@ -31,12 +31,6 @@ The dictionary of all the clients that have an active connection to Discord.
 ### `self.running_client`:
 The client actively processing user commands on Discord. This can be `None`.
 #
-### `self.cache`:
-The cache retrived from a given Helium process.
-#
-### `self.cache_age`:
-The exact time the cache was last updated.
-#
 ### `self.is_sane`:
 This is the flag that determines whether or not the code Urban Robot is currently deploying is functional. If this is ever `False`,  Urban Robot will become inactive, as no possible Helium process can be deployed. A manual start will be required.
 #
@@ -65,9 +59,6 @@ This is triggered by the Helium process sending a "ready" event. Helium has succ
 ### `on_health_check`:
 This is triggered by the Helium process responding to a `health_check` command. It gives the results of the health check, and if all is OK, it's given the go ahead to run and start itself up. Otherwise, it checks if vital cogs were OK, and if not, it tells the Helium process to shutdown with the reason of `vital_cog_failed`. Otherwise, if the health percentage is below the specified threshold at `self.healthy_percentage`, then it tells it to shutdown with reason `health_check_failure`. 
 #
-### `on_cache_sync`:
-This is triggered by a Helium process responding to a cache sync command. It receives the cache from a given client and fires the cache out to all the other clients.
-#
 ### `on_coma`:
 This is triggered by a client going into a coma. As of right now, I don't really know what I'm supposed to do here, so it just prints that. It exists for the sake of support.
 #
@@ -79,22 +70,18 @@ This is triggered by a client shutting down and disconnecting from Discord. Not 
 This function reverts a git pull, usually after a failed health check.
 
 #
-### `self.do_cache_sync(sid)`:
-This function retrieves the cache from a given client and stores it.
-#
-### `self.start(sid, reason, kill_running=False)`:
+### `self.start_bot(sid, reason, kill_running=False)`:
 This function does a series of things:
 - checks if there is a running client, if there is:
-  - runs do_cache_sync
   - checks if the flag kill_running is True, if it is, it kills the running client, otherwise it sends the bot into a coma.
 - Sets the given Helium process as the running client.
 - Tells the given Helium process to start processing commands.
 #
 ### `self.coma(sid, reason)`:
-This function puts a given Helium process into a coma. If it's the running Helium process, it also saves the cache.
+This function puts a given Helium process into a coma.
 #
 ### `self.shutdown(sid, reason)`:
-This function shuts down a given Helium process. If it's the running Helium process, it also saves the cache.
+This function shuts down a given Helium process.
 #
 ### `UrbanRobot.discord_send(destination, message, token, DM=False)`:
 This is a `classmethod`. It makes an API request to Discord to send a message. If DM is `False`, destination is expected to be a channel ID, if DM is `True`, destination is expected to be a user ID. It will open the DM with the user first, then extract the channel ID from there.
@@ -122,9 +109,6 @@ This can have two meanings, depending on context.
 #
 ### `client`
 A given Helium process. You may also see the term "running client". This is simply the Helium process that is actively responding to commands on DIscord.
-#
-### `cache`
-The series of things stored in memory that Helium needs to remember for commands. (Think when to do a reminder, database cache, etc.)
 #
 ### `token`
 The authorization string given to Discord to login.

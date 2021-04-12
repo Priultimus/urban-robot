@@ -17,9 +17,6 @@ A client sent event. This is sent when Discord has sent the READY event, and it 
 ### Health Check
 A client sent event. This is sent as a response to the corresponding command of the same name. It contains the results of a health check. If the health check returns all OK, the client should expect to be given the go ahead to run. If it isn't, the client is expected to shutdown and then Urban Robot will rollback the code to the last functional version it is aware of.
 #
-### Cache Sync
-A bidirectional event. When the sender is the client, the data sent should be the client's cache, usually after being requested. When the sender is Urban Robot, it should be the cache from the client who just sent it's cache. It'll usually send this to every ready client to keep them all in sync with each other.
-#
 ### Coma
 A client sent event. This is sent before the client goes into a "coma", meaning it's connected to Discord and ready but not actively processing commands from Discord.
 #
@@ -43,10 +40,10 @@ This is a request to perform a health check. Your client should follow the healt
 This is a request to start processing commands. Your client should start validate it's connection to Discord and fire a `ready` event in response.
 
 #### **`coma`**
-This is a request to stop processing commands. It'll include a reason and whether or not you're expected to perform a cache sync as part of your cleanup. 
+This is a request to stop processing commands with the reason why.
 
 #### **`shutdown`**
-This is a request to shutdown. It'll include a reason and whether or not you're expected to perform a cache sync as part of your cleanup.
+This is a request to shutdown with the reason why.
 #
 ## Health Check Spec
 _I need to figure out how this works sooner or later_
