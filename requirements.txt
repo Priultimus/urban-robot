@@ -1,0 +1,2 @@
+python-socketio
+python-dotenv
