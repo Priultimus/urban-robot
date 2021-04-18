@@ -182,7 +182,7 @@ class UrbanRobot(socketio.AsyncNamespace):
                     )
                     await self.shutdown(sid, "vital_cog_failure")
                     return
-            if data.get("percent") < self.percent_to_start:
+            if data.get("percent") < self.healthy_percentage:
                 results = results + f"{data.get('percent')}% is too low to start."
                 await self.log(results, log_level=logging.DEBUG)
                 await self.log(
