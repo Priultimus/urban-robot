@@ -203,7 +203,7 @@ class UrbanRobot(socketio.AsyncNamespace):
             f"set last_known_good_hash to {self.last_known_good_hash}",
             log_level=logging.DEBUG,
         )
-        await self.start_bot(sid, data.get("reason"))
+        await self.start_bot(sid, data.get("reason"), kill_running=True)
 
     async def on_coma(self, sid, data):
         """Handles the client being put into a 'coma' state.
